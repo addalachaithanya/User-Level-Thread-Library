@@ -1,0 +1,717 @@
+#include <stdio.h>
+
+#include <ucontext.h>
+
+#include <stdlib.h>
+
+#include "mythread.h"
+
+
+#define handle_error(msg) do
+{
+perror(msg);
+exit(EXIT_FAILURE);
+}
+while(0) 
+
+node *block_head=NULL;
+
+node *block_tail=NULL;
+
+int Thread_count = 0;
+
+
+hbd_contxt *running_thread;
+
+hbd_contxt *dead_list=NULL;
+
+
+
+void addtolist(node **headaddr, hbd_contxt *addnode)
+
+{
+	
+node *head = *headaddr;	
+
+node *temp = (node *)malloc(sizeof(node));
+
+temp->data = addnode;
+
+	temp->next = NULL;
+	
+if(!(NULL==head))
+		
+{
+		   
+temp->next = head->next;
+		   
+*headaddr = temp;
+		
+}
+       
+ else 
+	       
+ *headaddr = temp;
+
+
+}
+
+
+int deletenode(node **head,hbd_contxt *delnode)
+
+{
+	
+node *traverse = *head;
+
+	node *previous = *head;	
+
+
+	if(find_node(traverse,delnode))
+	
+{
+		
+while(traverse->data!=delnode)
+		
+ {
+			
+previous = traverse;
+	
+		traverse = traverse->next;
+	
+	}
+		
+		
+if(previous==traverse) 
+		
+{
+			
+*head=traverse->next;
+	
+free(traverse);	
+	return 1;   /*delete success*/
+		
+	}
+		
+else
+	{
+	
+			
+previous->next = traverse->next;
+		
+			
+free(traverse);
+			
+return 1;  /*delete success*/
+	
+	}
+	
+	
+}
+else 
+		
+return 0;		
+
+
+}
+
+
+int find_node(node *head,hbd_contxt *findnode)
+
+{
+
+	node *traverse = head;
+	
+while(traverse!=NULL && traverse->data!=findnode)
+ {
+		
+traverse = traverse->next;
+	
+}
+	
+if(NULL==traverse)
+		
+return 0;   /*find_node failed as findnode couldnt be found*/
+	
+else
+		
+return 1;
+
+}
+
+
+
+void addtoblocklist(hbd_contxt *temp)
+{
+
+node *tem=(node *)malloc(sizeof(node));
+	
+if(block_head==NULL)
+{
+		
+block_head=tem;		
+		
+block_head->data=temp;
+		
+block_head->next=NULL;
+		
+block_tail=block_head;
+	
+}
+	
+else{
+		
+tem->data=temp;
+		
+tem->next=NULL;
+		
+block_tail->next=tem;
+		
+block_tail=tem;
+	
+}
+
+}
+
+void addtojoinall_list(struct list **head,struct list *tem)
+{
+	
+struct list *temp=*head;
+	
+if(*head==NULL){
+		
+*head=tem;
+	
+}
+	
+else{
+		
+while(temp->next!=NULL){
+	
+temp=temp->next;
+		
+}
+		
+temp->next=tem;
+	
+}
+
+}
+
+void MyThreadInit(void(*start_funct)(void *),void *args)
+{
+
+	//char start_funct_stack[16384];
+	
+static ucontext_t * uctx_MyThreadInit, * uctx_start_funct;
+	
+static hbd_contxt *hbd_start_funct;
+	
+printf("Myhreadinit: starting\n");
+	
+uctx_start_funct=(ucontext_t *)malloc(sizeof(ucontext_t));
+	
+uctx_MyThreadInit=(ucontext_t *)malloc(sizeof(ucontext_t));
+	
+	
+if(getcontext(uctx_start_funct)==-1){
+		
+handle_error("getcontext");
+		
+printf("in here\n");
+	
+}
+	
+	
+uctx_start_funct->uc_stack.ss_sp = (char *)malloc(16384);
+	
+uctx_start_funct->uc_stack.ss_size = 16384*sizeof(char);
+	
+uctx_start_funct->uc_link = uctx_MyThreadInit;
+	
+	
+hbd_start_funct = (hbd_contxt *)malloc(sizeof(hbd_contxt));
+	
+hbd_start_funct->uctx_thread = uctx_start_funct;
+	
+
+	
+printf("Myhreadinit: before makecontext\n");
+	
+makecontext(uctx_start_funct,start_funct,1,args);
+	
+	
+Thread_count += 1;
+	
+hbd_start_funct->tid = Thread_count;
+	
+hbd_start_funct->tstatus = RUNNING;
+	
+hbd_start_funct->parent_tid = NULL;
+	
+hbd_start_funct->parent =NULL;
+	
+hbd_start_funct->join=NULL;
+	
+hbd_start_funct->joinall_list=NULL;
+	
+running_thread = hbd_start_funct;
+ 
+	    
+printf("thread init is %p\n",uctx_start_funct);
+	
+if (swapcontext(uctx_MyThreadInit,uctx_start_funct)==-1)
+		
+handle_error("swapcontext");
+	
+	
+	
+printf("Myhreadinit: exiting in init\n");
+	
+	
+	
+/* 
+        
+ hbd_contxt * temp =dead_list;
+        
+ while(temp!=NULL)
+	{
+				
+		
+free(temp->uctx_thread->uc_stack.ss_sp);
+		
+free(temp->uctx_thread);
+		
+free(temp);
+
+	
+}
+     
+ */
+
+
+}
+
+
+
+MyThread MyThreadCreate(void(*start_funct)(void *),void *args)
+{
+
+	ucontext_t *uctx_Mythreadcreate;
+	
+hbd_contxt *hbd_Mythreadcreate;
+
+	printf("Myhreadcreate: starting\n");
+
+	
+uctx_Mythreadcreate =(ucontext_t *)malloc(sizeof(ucontext_t));
+
+
+	if(getcontext(uctx_Mythreadcreate)==-1){
+		
+handle_error("getcontext");
+		
+printf("in here\n");
+	
+}
+
+	
+uctx_Mythreadcreate->uc_stack.ss_sp = (char *)malloc(16384);
+
+	uctx_Mythreadcreate->uc_stack.ss_size = 16384*sizeof(char);
+	
+uctx_Mythreadcreate->uc_link = NULL;
+
+	hbd_Mythreadcreate = (hbd_contxt *)malloc(sizeof(hbd_contxt));
+
+	hbd_Mythreadcreate->uctx_thread = uctx_Mythreadcreate;
+
+
+	makecontext(uctx_Mythreadcreate,start_funct,1,args);
+	
+	
+	
+// hbd_context initialisation
+	Thread_count += 1;
+
+hbd_Mythreadcreate->tid = Thread_count;
+	
+hbd_Mythreadcreate->tstatus = READY;
+
+hbd_Mythreadcreate->parent_tid=running_thread->tid;
+	
+hbd_Mythreadcreate->parent = running_thread;
+	
+hbd_Mythreadcreate->join=NULL;
+	
+hbd_Mythreadcreate->joinall_list=NULL;
+	//adding to queue
+	
+enqueue(hbd_Mythreadcreate);
+
+	
+node *temp = peek_front();
+	
+printf("%d\n",temp->data->tid);
+
+printf("exiting mythreadcreate\n");
+	
+return (void *)hbd_Mythreadcreate; 
+
+
+}
+
+
+
+
+/*int MyThreadJoin(MyThread thread) {
+	
+hbd_contxt *local = (hbd_contxt *)thread;
+	
+if(local->parent_tid! = running_thread->tid)
+		
+return -1;
+	
+else
+ {
+	    
+//search in ready queue and blocked queue, 
+if found anywhere put the running thread in the block 
+and add child structure to parent join member//
+            
+//swapcontext with //
+            
+node *tempnode = peek_front();
+	    
+while(tempnode!=NULL){
+			
+if(tempnode->parent_tid==running_thread->tid)
+                             
+// add it block list and take top of ready queue and swapcontext; 
+			
+else
+                             
+//temp=tempnode->next	
+              
+}
+	     tempnode = tempnode->next;
+          
+ }
+      if(tempnode!=NULL)
+			
+running_thread->tstatus=BLOCKED;
+			
+addtoblocklist(running_thread);                 
+
+       
+ }
+        
+
+
+
+}
+*/
+
+
+
+
+void MyThreadJoinAll(void)
+{
+	
+printf("entering joinall\n");
+	
+node *temp=peek_front();
+	
+hbd_contxt *childthread=NULL;
+	
+while(temp!=NULL){
+		
+childthread=temp->data;	
+		
+if(childthread->parent==running_thread){	
+			
+running_thread->tstatus=BLOCKED;
+			
+addtoblocklist(running_thread);
+			
+break;
+		
+}
+		
+temp=temp->next;
+	
+}
+	
+/*temp = block_head;
+        
+while(temp!=NULL){
+                 
+childthread =temp->data;
+		 
+if(childthread->parent== running_thread){
+                        
+running_thread->tstatus=BLOCKED;
+                       
+ addtoblocklist(running_thread);
+                        
+ break;
+                 
+ }
+                 
+ temp=temp->next;
+        
+}
+ */
+	
+node *block=block_head;
+	while(block!=NULL){
+		
+hbd_contxt* parentblocklist=block->data;
+		
+printf("block list is %d\n",parentblocklist->tid);
+		
+block=block->next;
+	
+}
+	
+
+temp=peek_front();
+	
+while(temp!=NULL){
+		
+childthread=temp->data;
+		
+if(childthread->parent==running_thread){
+			
+struct list *tem=(struct list *)malloc(sizeof(struct list));
+			
+tem->data=childthread->tid;
+			
+tem->next=NULL;
+			
+printf("added to join all list\n");
+			
+addtojoinall_list(&running_thread->joinall_list,tem);
+			
+printf("joinall list is %d\n",running_thread->joinall_list->data);
+		
+}
+		
+temp=temp->next;
+	
+}
+	
+/*temp = block_head;
+       
+ while(temp!=NULL){
+                 
+childthread =temp->data;
+		 
+if(childthread->parent== running_thread){
+                        
+struct list *tem=(struct list *)malloc(sizeof(struct list));
+			
+tem->data=childthread->tid;
+			
+tem->next=NULL;
+			
+printf("added to join all list\n");
+			
+addtojoinall_list(&running_thread->joinall_list,tem);
+			
+printf("joinall list is %d\n",running_thread->joinall_list->data);
+                 
+ }
+                  
+temp=temp->next;
+        
+} 
+*/
+	
+temp=peek_front();
+	
+hbd_contxt *temp2 = temp->data;
+	
+
+ucontext_t * current_thread = running_thread->uctx_thread;
+	
+running_thread = temp2;
+	dequeue();
+	
+swapcontext(current_thread,running_thread->uctx_thread); 
+
+
+}
+
+
+void MyThreadYield(void)
+{
+	
+	
+printf("entering yield\n");
+	
+node *temp =peek_front();
+	
+printf("entering yield after\n");
+	
+hbd_contxt *temp2 = temp->data;
+	enqueue(running_thread);
+	
+ucontext_t * current_thread = running_thread->uctx_thread;
+	
+running_thread = temp2;
+	dequeue();
+	
+printf("exiting yield\n");
+	
+swapcontext(current_thread,running_thread->uctx_thread);  	
+	
+
+}
+
+void delete_child(struct list  **parent){
+	
+struct list *temp=*parent;
+	
+struct list *tem=NULL;
+	
+printf("list head is %d current thread is %d\n",temp->data,running_thread->tid);
+	
+	
+if(temp->data==running_thread->tid){
+		
+printf("I am here\n");
+
+*parent=temp->next;
+		
+printf("temp->data is %d\n",temp->data);		
+		
+free(temp);
+	
+}
+	
+else{
+		
+while(temp->next!=NULL){
+			
+if(temp->next->data==running_thread->tid){
+				
+printf("in here\n");
+				
+tem=temp->next;						
+				
+temp->next=tem->next;
+				
+free(tem);
+				
+break;
+			
+}
+			
+temp=temp->next;
+		
+}
+	
+}
+
+
+}
+
+void MyThreadExit(void)
+{
+		
+	
+printf("entering thread exit\n");
+        
+hbd_contxt *temp = running_thread->parent;
+	
+if(temp==NULL){
+		
+if(running_thread->join==NULL && running_thread->joinall_list==NULL)
+			
+return;
+
+}
+	
+else{
+		
+		
+if(temp->join!=NULL && temp->join==running_thread){
+			
+temp->join=NULL;
+			///*****Join code to be added****///
+		
+}
+		
+else if(temp->joinall_list!=NULL){
+			
+//printf("delete done\n");
+			
+delete_child(&temp->joinall_list);
+			
+//printf("delete donehhaha\n");
+			
+//printf("temp->joinall_list%p\n",temp->joinall_list);			
+			
+if(temp->joinall_list==NULL){
+				
+temp->tstatus=READY;
+				
+if(find_node(block_head,temp)){
+					
+printf("enqueue done forhha  %d\n",temp->tid);
+					
+deletenode(&block_head,temp);
+					
+printf("enqueue done for  %d\n",temp->tid);
+				
+}
+				
+enqueue(temp);
+				
+node *queue=peek_front();
+				
+hbd_contxt *ter = queue->data;
+				
+dequeue();
+				
+hbd_contxt *current_thread=running_thread;
+				
+//printf("current_thread:%p\n",current_thread);
+				
+running_thread=ter;		
+				
+swapcontext(current_thread->uctx_thread,running_thread->uctx_thread);
+			
+}
+			
+else{
+				
+//printf("peek_front():%p\n",peek_front());
+				
+node *queue=peek_front();
+				
+hbd_contxt *ter = queue->data;
+				
+dequeue();
+				
+hbd_contxt *current_thread=running_thread;
+				
+//printf("current_thread:%p\n",current_thread);
+				
+running_thread=ter;		
+				
+swapcontext(current_thread->uctx_thread,running_thread->uctx_thread);
+				printf("delete done\n");
+			}			
+		}
+		else{
+				hbd_contxt *queue=peek_front();
+				dequeue();
+				hbd_contxt *current_thread=running_thread;
+				running_thread=queue;				
+				swapcontext(current_thread->uctx_thread,running_thread->uctx_thread);
+		}	
+	}
+	printf("exiting thread exit\n");
+		
+}
